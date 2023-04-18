@@ -1603,8 +1603,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             // }
 
             // TODO: add new t-address to the wallet for change every time
-            let wallet_t_key_ref = &self.keys.read().await.tkeys[0];
-            let addr = address::RecipientAddress::decode(&self.config.get_params(), &wallet_t_key_ref.address).unwrap();
+            let new_change_address = &self.keys.write().await.add_taddr(); // new change address should be derived from the seed
+            let addr = address::RecipientAddress::decode(&self.config.get_params(), &new_change_address).unwrap();
             let change_value = Amount::from_u64(change).unwrap();
             if let address::RecipientAddress::Transparent(to_addr) = addr {
                 builder.add_transparent_output(&to_addr, change_value);
