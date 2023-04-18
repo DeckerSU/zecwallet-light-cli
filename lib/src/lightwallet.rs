@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use incrementalmerkletree::{bridgetree::BridgeTree, Position, Tree};
+use zcash_primitives::transaction::components::orchard::builder::NoOrchardBuilder;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::io;
@@ -32,7 +33,7 @@ use incrementalmerkletree::bridgetree::Checkpoint;
 use incrementalmerkletree::Hashable;
 use log::{error, info, warn};
 
-use orchard::Anchor;
+use orchard::{Anchor, builder};
 use std::sync::mpsc;
 use std::{
     cmp,
@@ -1425,7 +1426,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 .unwrap(),
         );
 
-        let mut builder = Builder::new_with_orchard(self.config.get_params().clone(), target_height, orchard_anchor);
+        //let mut builder = Builder::new_with_orchard(self.config.get_params().clone(), target_height, orchard_anchor);
+        let mut builder = Builder::new(self.config.get_params().clone(), target_height);
+
         builder.with_progress_notifier(progress_notifier);
 
         // Create a map from address -> sk for all taddrs, so we can spend from the
@@ -1487,15 +1490,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .map_err(|e| format!("{:?}", e))?;
 
         // Add Orchard notes
-        for selected in o_notes.iter() {
-            if let Err(e) = builder.add_orchard_spend(selected.sk, selected.note, selected.merkle_path.clone()) {
-                let e = format!("Error adding orchard note: {:?}", e);
-                error!("{}", e);
-                return Err(e);
-            } else {
-                change += selected.note.value().inner();
-            }
-        }
+        // for selected in o_notes.iter() {
+        //     if let Err(e) = builder.add_orchard_spend(selected.sk, selected.note, selected.merkle_path.clone()) {
+        //         let e = format!("Error adding orchard note: {:?}", e);
+        //         error!("{}", e);
+        //         return Err(e);
+        //     } else {
+        //         change += selected.note.value().inner();
+        //     }
+        // }
 
         // Add Sapling notes
         for selected in s_notes.iter() {
@@ -1546,13 +1549,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             println!("{}: Adding output", now() - start_time);
 
             if let Err(e) = match to {
-                address::RecipientAddress::Unified(to) => {
-                    // TODO(orchard): Allow using the sapling or transparent parts of this unified address too.
-                    let orchard_address = to.orchard().unwrap().clone();
-                    total_o_recepients += 1;
-                    change -= u64::from(value);
+                // address::RecipientAddress::Unified(to) => {
+                //     // TODO(orchard): Allow using the sapling or transparent parts of this unified address too.
+                //     let orchard_address = to.orchard().unwrap().clone();
+                //     total_o_recepients += 1;
+                //     change -= u64::from(value);
 
-                    builder.add_orchard_output(Some(o_ovk.clone()), orchard_address, value.into(), encoded_memo)
+                //     builder.add_orchard_output(Some(o_ovk.clone()), orchard_address, value.into(), encoded_memo)
+                // }
+                address::RecipientAddress::Unified(to) => {
+                    unreachable!();
                 }
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recepients += 1;
@@ -1575,24 +1581,33 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // our orchard address.
         change -= u64::from(DEFAULT_FEE);
         if change > 0 {
-            // Send the change to orchard if there are no sapling outputs and at least one orchard note
-            // was selected. This means for t->t transactions, change will go to sapling.
-            if s_out == 0 && o_notes.len() > 0 {
-                let wallet_o_address = self.keys.read().await.okeys[0].orchard_address();
 
-                builder
-                    .add_orchard_output(Some(o_ovk.clone()), wallet_o_address, change, MemoBytes::empty())
-                    .map_err(|e| {
-                        let e = format!("Error adding orchard change: {:?}", e);
-                        error!("{}", e);
-                        e
-                    })?;
-            } else {
-                // Send to sapling address
-                builder.send_change_to(
-                    self.keys.read().await.zkeys[0].extfvk.fvk.ovk,
-                    self.keys.read().await.zkeys[0].zaddress.clone(),
-                );
+            // // Send the change to orchard if there are no sapling outputs and at least one orchard note
+            // // was selected. This means for t->t transactions, change will go to sapling.
+            // if s_out == 0 && o_notes.len() > 0 {
+            //     let wallet_o_address = self.keys.read().await.okeys[0].orchard_address();
+
+            //     builder
+            //         .add_orchard_output(Some(o_ovk.clone()), wallet_o_address, change, MemoBytes::empty())
+            //         .map_err(|e| {
+            //             let e = format!("Error adding orchard change: {:?}", e);
+            //             error!("{}", e);
+            //             e
+            //         })?;
+            // } else {
+            //     // Send to sapling address
+            //     builder.send_change_to(
+            //         self.keys.read().await.zkeys[0].extfvk.fvk.ovk,
+            //         self.keys.read().await.zkeys[0].zaddress.clone(),
+            //     );
+            // }
+
+            // TODO: add new t-address to the wallet for change every time
+            let wallet_t_key_ref = &self.keys.read().await.tkeys[0];
+            let addr = address::RecipientAddress::decode(&self.config.get_params(), &wallet_t_key_ref.address).unwrap();
+            let change_value = Amount::from_u64(change).unwrap();
+            if let address::RecipientAddress::Transparent(to_addr) = addr {
+                builder.add_transparent_output(&to_addr, change_value);
             }
         }
 
@@ -1714,6 +1729,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             )
             .await;
         }
+
+        // let print_hex = |data: &[u8]| {
+        //     for byte in data {
+        //         print!("{:02x}", byte);
+        //     }
+        //     println!();
+        // };
+        // print_hex(&raw_tx);
 
         Ok((txid, raw_tx))
     }
