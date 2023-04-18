@@ -1,4 +1,11 @@
-## Zecwallet CLI - A command line ZecWallet light client. 
+## Kmdwallet CLI - A command line KmdWallet light client.
+
+This repository is a fork of the well-known `Zecwallet CLI` repository that has been modified to be used with the `Komodo` `(KMD)` network. The `master` branch is the main development branch, however it is still experimental and should not be used to store or manage any significant amounts of KMD. It has been tested with the following repositories: 
+
+- https://github.com/DeckerSU/lightwalletd
+- https://github.com/KomodoPlatform/zebra
+
+## Zecwallet CLI - A command line ZecWallet light client.
 
 `zecwallet-cli` is a command line ZecWallet light client. To use it, download the latest binary from the releases page and run `./zecwallet-cli`
 
